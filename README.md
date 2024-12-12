@@ -48,7 +48,7 @@ A Model Context Protocol (MCP) server for querying the [Shodan API](https://shod
 
 ```bash
 git clone <repository_url>
-cd shodan-mcp
+cd mcp-shodan
 npm install
 ```
 
@@ -76,7 +76,7 @@ There are two ways to configure the Shodan MCP server in Claude Desktop:
   "mcpServers": {
     "shodan-mcp": {
       "command": "node",
-      "args": ["path/to/shodan-mcp/build/index.js"],
+      "args": ["path/to/mcp-shodan/build/index.js"],
       "env": {
         "SHODAN_API_KEY": "your_shodan_api_key",
         "DEBUG": "*"
@@ -92,7 +92,7 @@ There are two ways to configure the Shodan MCP server in Claude Desktop:
   "mcpServers": {
     "shodan-mcp": {
       "command": "npx",
-      "args": ["shodan-mcp"],
+      "args": ["@burtthecoder/mcp-shodan"],
       "env": {
         "SHODAN_API_KEY": "your_shodan_api_key",
         "DEBUG": "*"
