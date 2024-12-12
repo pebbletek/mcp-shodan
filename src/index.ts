@@ -12,10 +12,12 @@ import dotenv from "dotenv";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import fs from "fs";
+import path from "path";
+import os from "os";
 
 dotenv.config();
 
-const logFilePath = "E:/dev/shodan-mcp/server.log";
+const logFilePath = path.join(os.tmpdir(), "mcp-shodan-server.log");
 const SHODAN_API_KEY = process.env.SHODAN_API_KEY;
 if (!SHODAN_API_KEY) {
   throw new Error("SHODAN_API_KEY environment variable is required.");
@@ -25,10 +27,14 @@ const API_BASE_URL = "https://api.shodan.io";
 
 // Logging Helper Function
 function logToFile(message: string) {
-  const timestamp = new Date().toISOString();
-  const formattedMessage = `[${timestamp}] ${message}\n`;
-  fs.appendFileSync(logFilePath, formattedMessage, "utf8");
-  console.error(formattedMessage.trim()); // Use stderr for logging to avoid interfering with stdout
+  try {
+    const timestamp = new Date().toISOString();
+    const formattedMessage = `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(logFilePath, formattedMessage, "utf8");
+    console.error(formattedMessage.trim()); // Use stderr for logging to avoid interfering with stdout
+  } catch (error) {
+    console.error(`Failed to write to log file: ${error}`);
+  }
 }
 
 // Tool Schemas
