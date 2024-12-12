@@ -24,6 +24,7 @@ if (!SHODAN_API_KEY) {
 }
 
 const API_BASE_URL = "https://api.shodan.io";
+const CVEDB_API_URL = "https://cvedb.shodan.io";
 
 // Logging Helper Function
 function logToFile(message: string) {
@@ -52,7 +53,9 @@ const SearchArgsSchema = z.object({
 });
 
 const VulnerabilitiesArgsSchema = z.object({
-  cve: z.string().describe("The CVE identifier to query."),
+  cve: z.string()
+    .regex(/^CVE-\d{4}-\d{4,}$/i, "Must be a valid CVE ID format (e.g., CVE-2021-44228)")
+    .describe("The CVE identifier to query (format: CVE-YYYY-NNNNN)."),
 });
 
 const DnsLookupArgsSchema = z.object({
@@ -71,6 +74,23 @@ async function queryShodan(endpoint: string, params: Record<string, any>) {
     const errorMessage = error.response?.data?.error || error.message;
     logToFile(`Shodan API error: ${errorMessage}`);
     throw new Error(`Shodan API error: ${errorMessage}`);
+  }
+}
+
+// Helper Function for CVE lookups using CVEDB
+async function queryCVEDB(cveId: string) {
+  try {
+    logToFile(`Querying CVEDB for: ${cveId}`);
+    const response = await axios.get(`${CVEDB_API_URL}/cve/${cveId}`);
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 422) {
+      throw new Error(`Invalid CVE ID format: ${cveId}`);
+    }
+    if (error.response?.status === 404) {
+      throw new Error(`CVE not found: ${cveId}`);
+    }
+    throw new Error(`CVEDB API error: ${error.message}`);
   }
 }
 
@@ -104,7 +124,7 @@ server.setRequestHandler(InitializeRequestSchema, async (request) => {
       version: "1.0.0",
     },
     instructions:
-      "This server provides tools for querying Shodan, including IP lookups, searches, and vulnerabilities.",
+      "This server provides tools for querying Shodan, including IP lookups, searches, and vulnerabilities. For CVE lookups, use the format CVE-YYYY-NNNNN (e.g., CVE-2021-44228).",
   };
 });
 
@@ -123,7 +143,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "vulnerabilities",
-      description: "Retrieve vulnerability information for a CVE.",
+      description: "Retrieve vulnerability information for a CVE. Use format: CVE-YYYY-NNNNN (e.g., CVE-2021-44228)",
       inputSchema: zodToJsonSchema(VulnerabilitiesArgsSchema),
     },
     {
@@ -183,17 +203,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "vulnerabilities": {
         const parsedVulnArgs = VulnerabilitiesArgsSchema.safeParse(args);
         if (!parsedVulnArgs.success) {
-          throw new Error("Invalid vulnerabilities arguments");
+          throw new Error("Invalid CVE format. Please use format: CVE-YYYY-NNNNN (e.g., CVE-2021-44228)");
         }
-        const result = await queryShodan(`/shodan/cve/${parsedVulnArgs.data.cve}`, {});
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+
+        const cveId = parsedVulnArgs.data.cve.toUpperCase();
+        logToFile(`Looking up CVE: ${cveId}`);
+        
+        try {
+          const result = await queryCVEDB(cveId);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  cve_id: result.cve_id,
+                  summary: result.summary,
+                  cvss_v3: result.cvss_v3,
+                  cvss_v2: result.cvss_v2,
+                  epss: result.epss,
+                  ranking_epss: result.ranking_epss,
+                  kev: result.kev,
+                  propose_action: result.propose_action,
+                  ransomware_campaign: result.ransomware_campaign,
+                  published: result.published_time,
+                  references: result.references,
+                  affected_products: result.cpes
+                }, null, 2),
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: error.message,
+              },
+            ],
+            isError: true,
+          };
+        }
       }
 
       case "dns_lookup": {
