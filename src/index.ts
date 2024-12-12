@@ -62,6 +62,13 @@ const DnsLookupArgsSchema = z.object({
   hostnames: z.array(z.string()).describe("List of hostnames to resolve."),
 });
 
+const CpeLookupArgsSchema = z.object({
+  product: z.string().describe("The name of the product to search for CPEs."),
+  count: z.boolean().optional().default(false).describe("If true, returns only the count of matching CPEs."),
+  skip: z.number().optional().default(0).describe("Number of CPEs to skip (for pagination)."),
+  limit: z.number().optional().default(1000).describe("Maximum number of CPEs to return (max 1000)."),
+});
+
 // Helper Function to Query Shodan API
 async function queryShodan(endpoint: string, params: Record<string, any>) {
   try {
@@ -89,6 +96,25 @@ async function queryCVEDB(cveId: string) {
     }
     if (error.response?.status === 404) {
       throw new Error(`CVE not found: ${cveId}`);
+    }
+    throw new Error(`CVEDB API error: ${error.message}`);
+  }
+}
+
+// Helper Function for CPE lookups using CVEDB
+async function queryCPEDB(params: {
+  product: string;
+  count?: boolean;
+  skip?: number;
+  limit?: number;
+}) {
+  try {
+    logToFile(`Querying CVEDB for CPEs with params: ${JSON.stringify(params)}`);
+    const response = await axios.get(`${CVEDB_API_URL}/cpes`, { params });
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 422) {
+      throw new Error(`Invalid parameters: ${error.response.data?.detail || error.message}`);
     }
     throw new Error(`CVEDB API error: ${error.message}`);
   }
@@ -124,7 +150,7 @@ server.setRequestHandler(InitializeRequestSchema, async (request) => {
       version: "1.0.0",
     },
     instructions:
-      "This server provides tools for querying Shodan, including IP lookups, searches, and vulnerabilities. For CVE lookups, use the format CVE-YYYY-NNNNN (e.g., CVE-2021-44228).",
+      "This server provides tools for querying Shodan, including IP lookups, searches, vulnerabilities, and CPE lookups.",
   };
 });
 
@@ -150,6 +176,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       name: "dns_lookup",
       description: "Perform DNS lookups using Shodan.",
       inputSchema: zodToJsonSchema(DnsLookupArgsSchema),
+    },
+    {
+      name: "cpe_lookup",
+      description: "Search for Common Platform Enumeration (CPE) entries by product name.",
+      inputSchema: zodToJsonSchema(CpeLookupArgsSchema),
     },
   ];
 
@@ -272,6 +303,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+      }
+
+      case "cpe_lookup": {
+        const parsedCpeArgs = CpeLookupArgsSchema.safeParse(args);
+        if (!parsedCpeArgs.success) {
+          throw new Error("Invalid cpe_lookup arguments");
+        }
+
+        try {
+          const result = await queryCPEDB({
+            product: parsedCpeArgs.data.product,
+            count: parsedCpeArgs.data.count,
+            skip: parsedCpeArgs.data.skip,
+            limit: parsedCpeArgs.data.limit
+          });
+
+          // Format the response based on whether it's a count request or full CPE list
+          const formattedResult = parsedCpeArgs.data.count
+            ? { total_cpes: result.total }
+            : {
+                cpes: result.cpes,
+                skip: parsedCpeArgs.data.skip,
+                limit: parsedCpeArgs.data.limit,
+                total_returned: result.cpes.length
+              };
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(formattedResult, null, 2),
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: error.message,
+              },
+            ],
+            isError: true,
+          };
+        }
       }
 
       default:
