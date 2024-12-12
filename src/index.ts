@@ -52,7 +52,7 @@ const SearchArgsSchema = z.object({
     .describe("Maximum results to return."),
 });
 
-const VulnerabilitiesArgsSchema = z.object({
+const CVELookupArgsSchema = z.object({
   cve: z.string()
     .regex(/^CVE-\d{4}-\d{4,}$/i, "Must be a valid CVE ID format (e.g., CVE-2021-44228)")
     .describe("The CVE identifier to query (format: CVE-YYYY-NNNNN)."),
@@ -68,6 +68,24 @@ const CpeLookupArgsSchema = z.object({
   skip: z.number().optional().default(0).describe("Number of CPEs to skip (for pagination)."),
   limit: z.number().optional().default(1000).describe("Maximum number of CPEs to return (max 1000)."),
 });
+
+const CVEsByProductArgsSchema = z.object({
+  cpe23: z.string().optional().describe("The CPE version 2.3 identifier (format: cpe:2.3:part:vendor:product:version)."),
+  product: z.string().optional().describe("The name of the product to search for CVEs."),
+  count: z.boolean().optional().default(false).describe("If true, returns only the count of matching CVEs."),
+  is_kev: z.boolean().optional().default(false).describe("If true, returns only CVEs with the KEV flag set."),
+  sort_by_epss: z.boolean().optional().default(false).describe("If true, sorts CVEs by EPSS score in descending order."),
+  skip: z.number().optional().default(0).describe("Number of CVEs to skip (for pagination)."),
+  limit: z.number().optional().default(1000).describe("Maximum number of CVEs to return (max 1000)."),
+  start_date: z.string().optional().describe("Start date for filtering CVEs (format: YYYY-MM-DDTHH:MM:SS)."),
+  end_date: z.string().optional().describe("End date for filtering CVEs (format: YYYY-MM-DDTHH:MM:SS).")
+}).refine(
+  data => !(data.cpe23 && data.product),
+  { message: "Cannot specify both cpe23 and product. Use only one." }
+).refine(
+  data => data.cpe23 || data.product,
+  { message: "Must specify either cpe23 or product." }
+);
 
 // Helper Function to Query Shodan API
 async function queryShodan(endpoint: string, params: Record<string, any>) {
@@ -120,6 +138,30 @@ async function queryCPEDB(params: {
   }
 }
 
+// Helper Function for CVEs by product/CPE lookups using CVEDB
+async function queryCVEsByProduct(params: {
+  cpe23?: string;
+  product?: string;
+  count?: boolean;
+  is_kev?: boolean;
+  sort_by_epss?: boolean;
+  skip?: number;
+  limit?: number;
+  start_date?: string;
+  end_date?: string;
+}) {
+  try {
+    logToFile(`Querying CVEDB for CVEs with params: ${JSON.stringify(params)}`);
+    const response = await axios.get(`${CVEDB_API_URL}/cves`, { params });
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 422) {
+      throw new Error(`Invalid parameters: ${error.response.data?.detail || error.message}`);
+    }
+    throw new Error(`CVEDB API error: ${error.message}`);
+  }
+}
+
 // Server Setup
 const server = new Server(
   {
@@ -150,7 +192,7 @@ server.setRequestHandler(InitializeRequestSchema, async (request) => {
       version: "1.0.0",
     },
     instructions:
-      "This server provides tools for querying Shodan, including IP lookups, searches, vulnerabilities, and CPE lookups.",
+      "This server provides tools for querying Shodan, including IP lookups, searches, CVE lookups, CPE lookups, and CVE searches by product/CPE.",
   };
 });
 
@@ -168,9 +210,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       inputSchema: zodToJsonSchema(SearchArgsSchema),
     },
     {
-      name: "vulnerabilities",
+      name: "cve_lookup",
       description: "Retrieve vulnerability information for a CVE. Use format: CVE-YYYY-NNNNN (e.g., CVE-2021-44228)",
-      inputSchema: zodToJsonSchema(VulnerabilitiesArgsSchema),
+      inputSchema: zodToJsonSchema(CVELookupArgsSchema),
     },
     {
       name: "dns_lookup",
@@ -181,6 +223,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       name: "cpe_lookup",
       description: "Search for Common Platform Enumeration (CPE) entries by product name.",
       inputSchema: zodToJsonSchema(CpeLookupArgsSchema),
+    },
+    {
+      name: "cves_by_product",
+      description: "Search for CVEs affecting a specific product or CPE. Provide either product name or CPE 2.3 identifier.",
+      inputSchema: zodToJsonSchema(CVEsByProductArgsSchema),
     },
   ];
 
@@ -231,13 +278,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "vulnerabilities": {
-        const parsedVulnArgs = VulnerabilitiesArgsSchema.safeParse(args);
-        if (!parsedVulnArgs.success) {
+      case "cve_lookup": {
+        const parsedCveArgs = CVELookupArgsSchema.safeParse(args);
+        if (!parsedCveArgs.success) {
           throw new Error("Invalid CVE format. Please use format: CVE-YYYY-NNNNN (e.g., CVE-2021-44228)");
         }
 
-        const cveId = parsedVulnArgs.data.cve.toUpperCase();
+        const cveId = parsedCveArgs.data.cve.toUpperCase();
         logToFile(`Looking up CVE: ${cveId}`);
         
         try {
@@ -327,6 +374,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 skip: parsedCpeArgs.data.skip,
                 limit: parsedCpeArgs.data.limit,
                 total_returned: result.cpes.length
+              };
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(formattedResult, null, 2),
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: error.message,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "cves_by_product": {
+        const parsedArgs = CVEsByProductArgsSchema.safeParse(args);
+        if (!parsedArgs.success) {
+          throw new Error("Invalid arguments. Must provide either cpe23 or product name, but not both.");
+        }
+
+        try {
+          const result = await queryCVEsByProduct({
+            cpe23: parsedArgs.data.cpe23,
+            product: parsedArgs.data.product,
+            count: parsedArgs.data.count,
+            is_kev: parsedArgs.data.is_kev,
+            sort_by_epss: parsedArgs.data.sort_by_epss,
+            skip: parsedArgs.data.skip,
+            limit: parsedArgs.data.limit,
+            start_date: parsedArgs.data.start_date,
+            end_date: parsedArgs.data.end_date
+          });
+
+          // Format the response based on whether it's a count request or full CVE list
+          const formattedResult = parsedArgs.data.count
+            ? { total_cves: result.total }
+            : {
+                cves: result.cves,
+                skip: parsedArgs.data.skip,
+                limit: parsedArgs.data.limit,
+                total_returned: result.cves.length,
+                query_params: {
+                  cpe23: parsedArgs.data.cpe23,
+                  product: parsedArgs.data.product,
+                  is_kev: parsedArgs.data.is_kev,
+                  sort_by_epss: parsedArgs.data.sort_by_epss,
+                  start_date: parsedArgs.data.start_date,
+                  end_date: parsedArgs.data.end_date
+                }
               };
 
           return {

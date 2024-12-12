@@ -7,8 +7,9 @@ A Model Context Protocol (MCP) server for querying the [Shodan API](https://shod
 - **IP Lookup**: Retrieve detailed information about an IP address
 - **Search**: Search for devices on Shodan matching specific queries
 - **Ports**: Get a list of ports that Shodan is scanning
-- **Vulnerabilities**: Fetch detailed information about CVEs using Shodan's CVEDB
+- **CVE Lookup**: Fetch detailed information about specific CVEs using Shodan's CVEDB
 - **CPE Lookup**: Search for Common Platform Enumeration (CPE) entries by product name
+- **CVEs by Product**: Search for all CVEs affecting a specific product or CPE
 - **DNS Lookup**: Resolve hostnames to IP addresses
 
 ## Tools
@@ -26,8 +27,8 @@ A Model Context Protocol (MCP) server for querying the [Shodan API](https://shod
   * `query` (required): Shodan search query
   * `max_results` (optional, default: 10): Number of results to return
 
-### 3. Vulnerabilities Tool
-- Name: `vulnerabilities`
+### 3. CVE Lookup Tool
+- Name: `cve_lookup`
 - Description: Fetch detailed information about CVEs using Shodan's CVEDB
 - Parameters:
   * `cve` (required): CVE identifier in format CVE-YYYY-NNNNN (e.g., CVE-2021-44228)
@@ -53,7 +54,27 @@ A Model Context Protocol (MCP) server for querying the [Shodan API](https://shod
   * When count is true: Total number of matching CPEs
   * When count is false: List of CPEs with pagination details
 
-### 5. DNS Lookup Tool
+### 5. CVEs by Product Tool
+- Name: `cves_by_product`
+- Description: Search for CVEs affecting a specific product or CPE
+- Parameters:
+  * `cpe23` (optional): CPE 2.3 identifier (format: cpe:2.3:part:vendor:product:version)
+  * `product` (optional): Name of the product to search for CVEs
+  * `count` (optional, default: false): If true, returns only the count of matching CVEs
+  * `is_kev` (optional, default: false): If true, returns only CVEs with KEV flag set
+  * `sort_by_epss` (optional, default: false): If true, sorts CVEs by EPSS score
+  * `skip` (optional, default: 0): Number of CVEs to skip (for pagination)
+  * `limit` (optional, default: 1000): Maximum number of CVEs to return
+  * `start_date` (optional): Start date for filtering CVEs (format: YYYY-MM-DDTHH:MM:SS)
+  * `end_date` (optional): End date for filtering CVEs (format: YYYY-MM-DDTHH:MM:SS)
+- Notes:
+  * Must provide either cpe23 or product, but not both
+  * Date filtering uses published time of CVEs
+- Returns:
+  * When count is true: Total number of matching CVEs
+  * When count is false: List of CVEs with pagination details and query parameters
+
+### 6. DNS Lookup Tool
 - Name: `dns_lookup`
 - Description: Resolve hostnames to IP addresses
 - Parameters:
@@ -157,9 +178,12 @@ The server includes comprehensive error handling for:
 - Invalid input parameters
 - Invalid CVE formats
 - Invalid CPE lookup parameters
+- Invalid date formats
+- Mutually exclusive parameter validation
 
 ## Version History
 
+- v1.0.7: Added CVEs by Product search functionality and renamed vulnerabilities tool to cve_lookup
 - v1.0.6: Added CVEDB integration for enhanced CVE lookups and CPE search functionality
 - v1.0.0: Initial release with core functionality
 
