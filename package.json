@@ -3,14 +3,15 @@
   "name": "@burtthecoder/mcp-shodan",
   "version": "1.0.9",
   "description": "A Model Context Protocol server for Shodan API queries.",
-  "main": "./build/index.js",
+  "main": "build/index.js",
   "bin": {
     "mcp-shodan": "build/index.js"
   },
   "scripts": {
     "start": "node build/index.js",
-    "dev": "ts-node src/index.ts",
-    "build": "tsc"
+    "dev": "tsc -w",
+    "build": "tsc && chmod +x build/index.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",
@@ -24,7 +25,9 @@
     "@types/node": "^20.11.24"
   },
   "files": [
-    "build"
+    "build",
+    "README.md",
+    "LICENSE"
   ],
   "author": "BurtTheCoder",
   "license": "MIT",
