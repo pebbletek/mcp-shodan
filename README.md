@@ -2,6 +2,60 @@
 
 A Model Context Protocol (MCP) server for querying the [Shodan API](https://shodan.io) and [Shodan CVEDB](https://cvedb.shodan.io). This server provides tools for IP lookups, device searches, DNS lookups, vulnerability queries, CPE lookups, and more. It is designed to integrate seamlessly with MCP-compatible applications like [Claude Desktop](https://claude.ai).
 
+## Quick Start (Recommended)
+
+1. Install the server globally via npm:
+```bash
+npm install -g @burtthecoder/mcp-shodan
+```
+
+2. Add to your Claude Desktop configuration file:
+```json
+{
+  "mcpServers": {
+    "shodan": {
+      "command": "mcp-shodan",
+      "env": {
+        "SHODAN_API_KEY": "your-shodan-api-key"
+      }
+    }
+  }
+}
+```
+
+Configuration file location:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+3. Restart Claude Desktop
+
+## Alternative Setup (From Source)
+
+If you prefer to run from source or need to modify the code:
+
+1. Clone and build:
+```bash
+git clone https://github.com/BurtTheCoder/mcp-shodan.git
+cd mcp-shodan
+npm install
+npm run build
+```
+
+2. Add to your Claude Desktop configuration:
+```json
+{
+  "mcpServers": {
+    "shodan": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-shodan/build/index.js"],
+      "env": {
+        "SHODAN_API_KEY": "your-shodan-api-key"
+      }
+    }
+  }
+}
+```
+
 ## Features
 
 - **IP Lookup**: Retrieve detailed information about an IP address
@@ -85,82 +139,25 @@ A Model Context Protocol (MCP) server for querying the [Shodan API](https://shod
 - Node.js (v18 or later)
 - A valid [Shodan API Key](https://account.shodan.io/)
 
-## Setup Guide
+## Troubleshooting
 
-### 1. Installation
+### API Key Issues
 
-```bash
-git clone <repository_url>
-cd mcp-shodan
-npm install
-```
+If you see API key related errors:
 
-### 2. Configuration
+1. Verify your API key:
+   - Should be a valid Shodan API key
+   - No extra spaces or quotes around the key
+   - Must be from your Shodan account settings
+2. After any configuration changes:
+   - Save the config file
+   - Restart Claude Desktop
 
-Create a `.env` file in the root directory:
-```
-SHODAN_API_KEY=your_shodan_api_key
-```
+### Module Loading Issues
 
-### 3. Build and Run
-
-```bash
-npm run build
-npm start
-```
-
-### 4. Configure Claude Desktop
-
-There are two ways to configure the Shodan MCP server in Claude Desktop:
-
-#### Option 1: Direct Node Execution (Local Development)
-```json
-{
-  "mcpServers": {
-    "shodan-mcp": {
-      "command": "node",
-      "args": ["path/to/mcp-shodan/build/index.js"],
-      "env": {
-        "SHODAN_API_KEY": "your_shodan_api_key",
-        "DEBUG": "*"
-      }
-    }
-  }
-}
-```
-
-#### Option 2: NPX Installation (Recommended for Users)
-```json
-{
-  "mcpServers": {
-    "shodan-mcp": {
-      "command": "npm",
-      "args": ["exec", "@burtthecoder/mcp-shodan"],
-      "env": {
-        "SHODAN_API_KEY": "your_shodan_api_key",
-        "DEBUG": "*"
-      }
-    }
-  }
-}
-```
-
-The npm exec method automatically downloads and runs the latest version of the package from npm.
-
-Configuration file location:
-
-Windows: %APPDATA%\Claude\claude_desktop_config.json
-macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
-
-## Usage
-
-1. Start the MCP server:
-```bash
-npm start
-```
-
-2. Launch Claude Desktop and ensure the Shodan MCP server is detected
-3. Use any of the available tools through the Claude interface
+If you see module loading errors:
+1. For global installation: Use the simple configuration shown in Quick Start
+2. For source installation: Ensure you're using Node.js v18 or later
 
 ## Development
 
