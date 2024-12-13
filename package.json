@@ -8,9 +8,7 @@
     "mcp-shodan": "build/index.js"
   },
   "scripts": {
-    "start": "node build/index.js",
-    "dev": "tsc -w",
-    "build": "tsc && chmod +x build/index.js",
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
