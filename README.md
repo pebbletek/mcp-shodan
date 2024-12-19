@@ -1,6 +1,6 @@
 # Shodan MCP Server
 
-A Model Context Protocol (MCP) server for querying the [Shodan API](https://shodan.io) and [Shodan CVEDB](https://cvedb.shodan.io). This server provides tools for IP lookups, device searches, DNS lookups, vulnerability queries, CPE lookups, and more. It is designed to integrate seamlessly with MCP-compatible applications like [Claude Desktop](https://claude.ai).
+A Model Context Protocol (MCP) server for querying the [Shodan API](https://shodan.io) and [Shodan CVEDB](https://cvedb.shodan.io). This server provides comprehensive access to Shodan's network intelligence and security services, including IP reconnaissance, DNS operations, vulnerability tracking, and device discovery. All tools provide structured, formatted output for easy analysis and integration.
 
 ## Quick Start (Recommended)
 
@@ -58,45 +58,78 @@ npm run build
 
 ## Features
 
-- **IP Lookup**: Retrieve detailed information about an IP address
-- **Search**: Search for devices on Shodan matching specific queries
-- **Ports**: Get a list of ports that Shodan is scanning
-- **CVE Lookup**: Fetch detailed information about specific CVEs using Shodan's CVEDB
-- **CPE Lookup**: Search for Common Platform Enumeration (CPE) entries by product name
-- **CVEs by Product**: Search for all CVEs affecting a specific product or CPE
-- **DNS Lookup**: Resolve hostnames to IP addresses
+- **Network Reconnaissance**: Query detailed information about IP addresses, including open ports, services, and vulnerabilities
+- **DNS Operations**: Forward and reverse DNS lookups for domains and IP addresses
+- **Vulnerability Intelligence**: Access to Shodan's CVEDB for detailed vulnerability information, CPE lookups, and product-specific CVE tracking
+- **Device Discovery**: Search Shodan's database of internet-connected devices with advanced filtering
 
 ## Tools
 
 ### 1. IP Lookup Tool
 - Name: `ip_lookup`
-- Description: Retrieve detailed information about an IP address
+- Description: Retrieve comprehensive information about an IP address, including geolocation, open ports, running services, SSL certificates, hostnames, and cloud provider details if available
 - Parameters:
   * `ip` (required): IP address to lookup
+- Returns:
+  * IP Information (address, organization, ISP, ASN)
+  * Location (country, city, coordinates)
+  * Services (ports, protocols, banners)
+  * Cloud Provider details (if available)
+  * Associated hostnames and domains
+  * Tags
 
-### 2. Search Tool
-- Name: `search`
-- Description: Search for devices on Shodan
+### 2. Shodan Search Tool
+- Name: `shodan_search`
+- Description: Search Shodan's database of internet-connected devices
 - Parameters:
   * `query` (required): Shodan search query
   * `max_results` (optional, default: 10): Number of results to return
+- Returns:
+  * Search summary with total results
+  * Country-based distribution statistics
+  * Detailed device information including:
+    - Basic information (IP, organization, ISP)
+    - Location data
+    - Service details
+    - Web server information
+    - Associated hostnames and domains
 
 ### 3. CVE Lookup Tool
 - Name: `cve_lookup`
-- Description: Fetch detailed information about CVEs using Shodan's CVEDB
+- Description: Query detailed vulnerability information from Shodan's CVEDB
 - Parameters:
   * `cve` (required): CVE identifier in format CVE-YYYY-NNNNN (e.g., CVE-2021-44228)
 - Returns:
-  * CVE details including:
-    - CVSS v2 and v3 scores
-    - EPSS score and ranking
+  * Basic Information (ID, published date, summary)
+  * Severity Scores:
+    - CVSS v2 and v3 with severity levels
+    - EPSS probability and ranking
+  * Impact Assessment:
     - KEV status
-    - Proposed action
-    - Ransomware campaign information
-    - Affected products (CPEs)
-    - References
+    - Proposed mitigations
+    - Ransomware associations
+  * Affected products (CPEs)
+  * References
 
-### 4. CPE Lookup Tool
+### 4. DNS Lookup Tool
+- Name: `dns_lookup`
+- Description: Resolve domain names to IP addresses using Shodan's DNS service
+- Parameters:
+  * `hostnames` (required): Array of hostnames to resolve
+- Returns:
+  * DNS resolutions mapping hostnames to IPs
+  * Summary of total lookups and queried hostnames
+
+### 5. Reverse DNS Lookup Tool
+- Name: `reverse_dns_lookup`
+- Description: Perform reverse DNS lookups to find hostnames associated with IP addresses
+- Parameters:
+  * `ips` (required): Array of IP addresses to lookup
+- Returns:
+  * Reverse DNS resolutions mapping IPs to hostnames
+  * Summary of total lookups and results
+
+### 6. CPE Lookup Tool
 - Name: `cpe_lookup`
 - Description: Search for Common Platform Enumeration (CPE) entries by product name
 - Parameters:
@@ -108,9 +141,9 @@ npm run build
   * When count is true: Total number of matching CPEs
   * When count is false: List of CPEs with pagination details
 
-### 5. CVEs by Product Tool
+### 7. CVEs by Product Tool
 - Name: `cves_by_product`
-- Description: Search for CVEs affecting a specific product or CPE
+- Description: Search for vulnerabilities affecting specific products or CPEs
 - Parameters:
   * `cpe23` (optional): CPE 2.3 identifier (format: cpe:2.3:part:vendor:product:version)
   * `product` (optional): Name of the product to search for CVEs
@@ -125,14 +158,13 @@ npm run build
   * Must provide either cpe23 or product, but not both
   * Date filtering uses published time of CVEs
 - Returns:
-  * When count is true: Total number of matching CVEs
-  * When count is false: List of CVEs with pagination details and query parameters
-
-### 6. DNS Lookup Tool
-- Name: `dns_lookup`
-- Description: Resolve hostnames to IP addresses
-- Parameters:
-  * `hostnames` (required): Array of hostnames to resolve
+  * Query information
+  * Results summary with pagination details
+  * Detailed vulnerability information including:
+    - Basic information
+    - Severity scores
+    - Impact assessments
+    - References
 
 ## Requirements
 
@@ -143,15 +175,44 @@ npm run build
 
 ### API Key Issues
 
-If you see API key related errors:
+If you see API key related errors (e.g., "Request failed with status code 401"):
 
 1. Verify your API key:
-   - Should be a valid Shodan API key
-   - No extra spaces or quotes around the key
-   - Must be from your Shodan account settings
-2. After any configuration changes:
-   - Save the config file
-   - Restart Claude Desktop
+   - Must be a valid Shodan API key from your [account settings](https://account.shodan.io/)
+   - Ensure the key has sufficient credits/permissions for the operation
+   - Check for extra spaces or quotes around the key in the configuration
+   - Verify the key is correctly set in the SHODAN_API_KEY environment variable
+
+2. Common Error Codes:
+   - 401 Unauthorized: Invalid API key or missing authentication
+   - 402 Payment Required: Out of query credits
+   - 429 Too Many Requests: Rate limit exceeded
+
+3. Configuration Steps:
+   a. Get your API key from [Shodan Account](https://account.shodan.io/)
+   b. Add it to your configuration file:
+      ```json
+      {
+        "mcpServers": {
+          "shodan": {
+            "command": "mcp-shodan",
+            "env": {
+              "SHODAN_API_KEY": "your-actual-api-key-here"
+            }
+          }
+        }
+      }
+      ```
+   c. Save the config file
+   d. Restart Claude Desktop
+
+4. Testing Your Key:
+   - Try a simple query first (e.g., dns_lookup for "google.com")
+   - Check your [Shodan account dashboard](https://account.shodan.io/) for credit status
+   - Verify the key works directly with curl:
+     ```bash
+     curl "https://api.shodan.io/dns/resolve?hostnames=google.com&key=your-api-key"
+     ```
 
 ### Module Loading Issues
 
@@ -180,6 +241,7 @@ The server includes comprehensive error handling for:
 
 ## Version History
 
+- v1.0.12: Added reverse DNS lookup and improved output formatting
 - v1.0.7: Added CVEs by Product search functionality and renamed vulnerabilities tool to cve_lookup
 - v1.0.6: Added CVEDB integration for enhanced CVE lookups and CPE search functionality
 - v1.0.0: Initial release with core functionality

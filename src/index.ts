@@ -14,6 +14,111 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
+// Shodan API Response Types
+interface DnsResponse {
+  [hostname: string]: string;  // Maps hostname to IP address
+}
+
+interface ReverseDnsResponse {
+  [ip: string]: string[];  // Maps IP address to array of hostnames
+}
+
+interface SearchLocation {
+  city: string | null;
+  region_code: string | null;
+  area_code: number | null;
+  longitude: number;
+  latitude: number;
+  country_code: string;
+  country_name: string;
+}
+
+interface SearchMatch {
+  product?: string;
+  hash: number;
+  ip: number;
+  ip_str: string;
+  org: string;
+  isp: string;
+  transport: string;
+  cpe?: string[];
+  version?: string;
+  hostnames: string[];
+  domains: string[];
+  location: SearchLocation;
+  timestamp: string;
+  port: number;
+  data: string;
+  asn: string;
+  http?: {
+    server?: string;
+    title?: string;
+    robots?: string | null;
+    sitemap?: string | null;
+  };
+}
+
+interface SearchResponse {
+  matches: SearchMatch[];
+  facets: {
+    country?: Array<{
+      count: number;
+      value: string;
+    }>;
+  };
+  total: number;
+}
+
+interface ShodanService {
+  port: number;
+  transport: string;
+  data?: string;
+  http?: {
+    server?: string;
+    title?: string;
+  };
+  cloud?: {
+    provider: string;
+    service: string;
+    region: string;
+  };
+}
+
+interface CveResponse {
+  cve_id: string;
+  summary: string;
+  cvss: number;
+  cvss_version: number;
+  cvss_v2: number;
+  cvss_v3: number;
+  epss: number;
+  ranking_epss: number;
+  kev: boolean;
+  propose_action: string;
+  ransomware_campaign: string;
+  references: string[];
+  published_time: string;
+  cpes: string[];
+}
+
+interface ShodanHostResponse {
+  ip_str: string;
+  org: string;
+  isp: string;
+  asn: string;
+  last_update: string;
+  country_name: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  region_code: string;
+  ports: number[];
+  data: ShodanService[];
+  hostnames: string[];
+  domains: string[];
+  tags: string[];
+}
+
 dotenv.config();
 
 const logFilePath = path.join(os.tmpdir(), "mcp-shodan-server.log");
@@ -42,7 +147,7 @@ const IpLookupArgsSchema = z.object({
   ip: z.string().describe("The IP address to query."),
 });
 
-const SearchArgsSchema = z.object({
+const ShodanSearchArgsSchema = z.object({
   query: z.string().describe("Search query for Shodan."),
   max_results: z
     .number()
@@ -59,6 +164,10 @@ const CVELookupArgsSchema = z.object({
 
 const DnsLookupArgsSchema = z.object({
   hostnames: z.array(z.string()).describe("List of hostnames to resolve."),
+});
+
+const ReverseDnsLookupArgsSchema = z.object({
+  ips: z.array(z.string()).describe("List of IP addresses to perform reverse DNS lookup on."),
 });
 
 const CpeLookupArgsSchema = z.object({
@@ -190,8 +299,14 @@ server.setRequestHandler(InitializeRequestSchema, async (request) => {
       name: "shodan-mcp",
       version: "1.0.0",
     },
-    instructions:
-      "This server provides tools for querying Shodan, including IP lookups, searches, CVE lookups, CPE lookups, and CVE searches by product/CPE.",
+    instructions: `This MCP server provides comprehensive access to Shodan's network intelligence and security services:
+
+- Network Reconnaissance: Query detailed information about IP addresses, including open ports, services, and vulnerabilities
+- DNS Operations: Forward and reverse DNS lookups for domains and IP addresses
+- Vulnerability Intelligence: Access to Shodan's CVEDB for detailed vulnerability information, CPE lookups, and product-specific CVE tracking
+- Device Discovery: Search Shodan's database of internet-connected devices with advanced filtering
+
+Each tool provides structured, formatted output for easy analysis and integration.`,
   };
 });
 
@@ -200,33 +315,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   const tools = [
     {
       name: "ip_lookup",
-      description: "Retrieve information about an IP address.",
+      description: "Retrieve comprehensive information about an IP address, including geolocation, open ports, running services, SSL certificates, hostnames, and cloud provider details if available. Returns service banners and HTTP server information when present.",
       inputSchema: zodToJsonSchema(IpLookupArgsSchema),
     },
     {
-      name: "search",
-      description: "Search for devices on Shodan.",
-      inputSchema: zodToJsonSchema(SearchArgsSchema),
+      name: "shodan_search",
+      description: "Search Shodan's database of internet-connected devices. Returns detailed information about matching devices including services, vulnerabilities, and geographic distribution. Supports advanced search filters and returns country-based statistics.",
+      inputSchema: zodToJsonSchema(ShodanSearchArgsSchema),
     },
     {
       name: "cve_lookup",
-      description: "Retrieve vulnerability information for a CVE. Use format: CVE-YYYY-NNNNN (e.g., CVE-2021-44228)",
+      description: "Query detailed vulnerability information from Shodan's CVEDB. Returns comprehensive CVE details including CVSS scores (v2/v3), EPSS probability and ranking, KEV status, proposed mitigations, ransomware associations, and affected products (CPEs).",
       inputSchema: zodToJsonSchema(CVELookupArgsSchema),
     },
     {
       name: "dns_lookup",
-      description: "Perform DNS lookups using Shodan.",
+      description: "Resolve domain names to IP addresses using Shodan's DNS service. Supports batch resolution of multiple hostnames in a single query. Returns IP addresses mapped to their corresponding hostnames.",
       inputSchema: zodToJsonSchema(DnsLookupArgsSchema),
     },
     {
       name: "cpe_lookup",
-      description: "Search for Common Platform Enumeration (CPE) entries by product name.",
+      description: "Search for Common Platform Enumeration (CPE) entries by product name in Shodan's CVEDB. Supports pagination and can return either full CPE details or just the total count. Useful for identifying specific versions and configurations of software and hardware.",
       inputSchema: zodToJsonSchema(CpeLookupArgsSchema),
     },
     {
       name: "cves_by_product",
-      description: "Search for CVEs affecting a specific product or CPE. Provide either product name or CPE 2.3 identifier.",
+      description: "Search for vulnerabilities affecting specific products or CPEs. Supports filtering by KEV status, sorting by EPSS score, date ranges, and pagination. Can search by product name or CPE 2.3 identifier. Returns detailed vulnerability information including severity scores and impact assessments.",
       inputSchema: zodToJsonSchema(CVEsByProductArgsSchema),
+    },
+    {
+      name: "reverse_dns_lookup",
+      description: "Perform reverse DNS lookups to find hostnames associated with IP addresses. Supports batch lookups of multiple IP addresses in a single query. Returns all known hostnames for each IP address, with clear indication when no hostnames are found.",
+      inputSchema: zodToJsonSchema(ReverseDnsLookupArgsSchema),
     },
   ];
 
@@ -248,30 +368,115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error("Invalid ip_lookup arguments");
         }
         const result = await queryShodan(`/shodan/host/${parsedIpArgs.data.ip}`, {});
+        
+        // Format the response in a user-friendly way
+        const formattedResult = {
+          "IP Information": {
+            "IP Address": result.ip_str,
+            "Organization": result.org,
+            "ISP": result.isp,
+            "ASN": result.asn,
+            "Last Update": result.last_update
+          },
+          "Location": {
+            "Country": result.country_name,
+            "City": result.city,
+            "Coordinates": `${result.latitude}, ${result.longitude}`,
+            "Region": result.region_code
+          },
+          "Services": result.ports.map((port: number) => {
+            const service = result.data.find((d: ShodanService) => d.port === port);
+            return {
+              "Port": port,
+              "Protocol": service?.transport || "unknown",
+              "Service": service?.data?.trim() || "No banner",
+              ...(service?.http ? {
+                "HTTP": {
+                  "Server": service.http.server,
+                  "Title": service.http.title,
+                }
+              } : {})
+            };
+          }),
+          "Cloud Provider": result.data[0]?.cloud ? {
+            "Provider": result.data[0].cloud.provider,
+            "Service": result.data[0].cloud.service,
+            "Region": result.data[0].cloud.region
+          } : "Not detected",
+          "Hostnames": result.hostnames || [],
+          "Domains": result.domains || [],
+          "Tags": result.tags || []
+        };
+
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2),
+              text: JSON.stringify(formattedResult, null, 2),
             },
           ],
         };
       }
 
-      case "search": {
-        const parsedSearchArgs = SearchArgsSchema.safeParse(args);
+      case "shodan_search": {
+        const parsedSearchArgs = ShodanSearchArgsSchema.safeParse(args);
         if (!parsedSearchArgs.success) {
           throw new Error("Invalid search arguments");
         }
-        const result = await queryShodan("/shodan/host/search", {
+        const result: SearchResponse = await queryShodan("/shodan/host/search", {
           query: parsedSearchArgs.data.query,
           limit: parsedSearchArgs.data.max_results,
         });
+
+        // Format the response in a user-friendly way
+        const formattedResult = {
+          "Search Summary": {
+            "Query": parsedSearchArgs.data.query,
+            "Total Results": result.total,
+            "Results Returned": result.matches.length
+          },
+          "Country Distribution": result.facets?.country?.map(country => ({
+            "Country": country.value,
+            "Count": country.count,
+            "Percentage": `${((country.count / result.total) * 100).toFixed(2)}%`
+          })) || [],
+          "Matches": result.matches.map(match => ({
+            "Basic Information": {
+              "IP Address": match.ip_str,
+              "Organization": match.org,
+              "ISP": match.isp,
+              "ASN": match.asn,
+              "Last Update": match.timestamp
+            },
+            "Location": {
+              "Country": match.location.country_name,
+              "City": match.location.city || "Unknown",
+              "Region": match.location.region_code || "Unknown",
+              "Coordinates": `${match.location.latitude}, ${match.location.longitude}`
+            },
+            "Service Details": {
+              "Port": match.port,
+              "Transport": match.transport,
+              "Product": match.product || "Unknown",
+              "Version": match.version || "Unknown",
+              "CPE": match.cpe || []
+            },
+            "Web Information": match.http ? {
+              "Server": match.http.server,
+              "Title": match.http.title,
+              "Robots.txt": match.http.robots ? "Present" : "Not found",
+              "Sitemap": match.http.sitemap ? "Present" : "Not found"
+            } : "No HTTP information",
+            "Hostnames": match.hostnames,
+            "Domains": match.domains
+          }))
+        };
+
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2),
+              text: JSON.stringify(formattedResult, null, 2),
             },
           ],
         };
@@ -288,24 +493,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         
         try {
           const result = await queryCVEDB(cveId);
+
+          // Helper function to format CVSS score severity
+          const getCvssSeverity = (score: number) => {
+            if (score >= 9.0) return "Critical";
+            if (score >= 7.0) return "High";
+            if (score >= 4.0) return "Medium";
+            if (score >= 0.1) return "Low";
+            return "None";
+          };
+
+          // Format the response in a user-friendly way
+          const formattedResult = {
+            "Basic Information": {
+              "CVE ID": result.cve_id,
+              "Published": new Date(result.published_time).toLocaleString(),
+              "Summary": result.summary
+            },
+            "Severity Scores": {
+              "CVSS v3": result.cvss_v3 ? {
+                "Score": result.cvss_v3,
+                "Severity": getCvssSeverity(result.cvss_v3)
+              } : "Not available",
+              "CVSS v2": result.cvss_v2 ? {
+                "Score": result.cvss_v2,
+                "Severity": getCvssSeverity(result.cvss_v2)
+              } : "Not available",
+              "EPSS": result.epss ? {
+                "Score": `${(result.epss * 100).toFixed(2)}%`,
+                "Ranking": `Top ${(result.ranking_epss * 100).toFixed(2)}%`
+              } : "Not available"
+            },
+            "Impact Assessment": {
+              "Known Exploited Vulnerability": result.kev ? "Yes" : "No",
+              "Proposed Action": result.propose_action || "No specific action proposed",
+              "Ransomware Campaign": result.ransomware_campaign || "No known ransomware campaigns"
+            },
+            "Affected Products": result.cpes?.length > 0 ? result.cpes : ["No specific products listed"],
+            "Additional Information": {
+              "References": result.references?.length > 0 ? result.references : ["No references provided"]
+            }
+          };
+
           return {
             content: [
               {
                 type: "text",
-                text: JSON.stringify({
-                  cve_id: result.cve_id,
-                  summary: result.summary,
-                  cvss_v3: result.cvss_v3,
-                  cvss_v2: result.cvss_v2,
-                  epss: result.epss,
-                  ranking_epss: result.ranking_epss,
-                  kev: result.kev,
-                  propose_action: result.propose_action,
-                  ransomware_campaign: result.ransomware_campaign,
-                  published: result.published_time,
-                  references: result.references,
-                  affected_products: result.cpes
-                }, null, 2),
+                text: JSON.stringify(formattedResult, null, 2),
               },
             ],
           };
@@ -328,24 +562,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error("Invalid dns_lookup arguments");
         }
         
-        // Ensure proper formatting of hostnames for the API request
+        // Join hostnames with commas for the API request
         const hostnamesString = parsedDnsArgs.data.hostnames.join(",");
         
-        // Log the request parameters for debugging
-        logToFile(`DNS lookup request parameters: ${JSON.stringify({ hostnames: hostnamesString })}`);
-        
-        const result = await queryShodan("/dns/resolve", {
+        const result: DnsResponse = await queryShodan("/dns/resolve", {
           hostnames: hostnamesString
         });
-        
-        // Log the raw response for debugging
-        logToFile(`DNS lookup raw response: ${JSON.stringify(result)}`);
+
+        // Format the response in a user-friendly way
+        const formattedResult = {
+          "DNS Resolutions": Object.entries(result).map(([hostname, ip]) => ({
+            "Hostname": hostname,
+            "IP Address": ip
+          })),
+          "Summary": {
+            "Total Lookups": Object.keys(result).length,
+            "Queried Hostnames": parsedDnsArgs.data.hostnames
+          }
+        };
         
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(result, null, 2)
+              text: JSON.stringify(formattedResult, null, 2)
             },
           ],
         };
@@ -415,22 +655,71 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             end_date: parsedArgs.data.end_date
           });
 
+          // Helper function to format CVSS score severity
+          const getCvssSeverity = (score: number) => {
+            if (score >= 9.0) return "Critical";
+            if (score >= 7.0) return "High";
+            if (score >= 4.0) return "Medium";
+            if (score >= 0.1) return "Low";
+            return "None";
+          };
+
           // Format the response based on whether it's a count request or full CVE list
           const formattedResult = parsedArgs.data.count
-            ? { total_cves: result.total }
-            : {
-                cves: result.cves,
-                skip: parsedArgs.data.skip,
-                limit: parsedArgs.data.limit,
-                total_returned: result.cves.length,
-                query_params: {
-                  cpe23: parsedArgs.data.cpe23,
-                  product: parsedArgs.data.product,
-                  is_kev: parsedArgs.data.is_kev,
-                  sort_by_epss: parsedArgs.data.sort_by_epss,
-                  start_date: parsedArgs.data.start_date,
-                  end_date: parsedArgs.data.end_date
+            ? {
+                "Query Information": {
+                  "Product": parsedArgs.data.product || "N/A",
+                  "CPE 2.3": parsedArgs.data.cpe23 || "N/A",
+                  "KEV Only": parsedArgs.data.is_kev ? "Yes" : "No",
+                  "Sort by EPSS": parsedArgs.data.sort_by_epss ? "Yes" : "No"
+                },
+                "Results": {
+                  "Total CVEs Found": result.total
                 }
+              }
+            : {
+                "Query Information": {
+                  "Product": parsedArgs.data.product || "N/A",
+                  "CPE 2.3": parsedArgs.data.cpe23 || "N/A",
+                  "KEV Only": parsedArgs.data.is_kev ? "Yes" : "No",
+                  "Sort by EPSS": parsedArgs.data.sort_by_epss ? "Yes" : "No",
+                  "Date Range": parsedArgs.data.start_date ? 
+                    `${parsedArgs.data.start_date} to ${parsedArgs.data.end_date || 'now'}` : 
+                    "All dates"
+                },
+                "Results Summary": {
+                  "Total CVEs Found": result.total,
+                  "CVEs Returned": result.cves.length,
+                  "Page": `${Math.floor(parsedArgs.data.skip! / parsedArgs.data.limit!) + 1}`,
+                  "CVEs per Page": parsedArgs.data.limit
+                },
+                "Vulnerabilities": result.cves.map((cve: CveResponse) => ({
+                  "Basic Information": {
+                    "CVE ID": cve.cve_id,
+                    "Published": new Date(cve.published_time).toLocaleString(),
+                    "Summary": cve.summary
+                  },
+                  "Severity Scores": {
+                    "CVSS v3": cve.cvss_v3 ? {
+                      "Score": cve.cvss_v3,
+                      "Severity": getCvssSeverity(cve.cvss_v3)
+                    } : "Not available",
+                    "CVSS v2": cve.cvss_v2 ? {
+                      "Score": cve.cvss_v2,
+                      "Severity": getCvssSeverity(cve.cvss_v2)
+                    } : "Not available",
+                    "EPSS": cve.epss ? {
+                      "Score": `${(cve.epss * 100).toFixed(2)}%`,
+                      "Ranking": `Top ${(cve.ranking_epss * 100).toFixed(2)}%`
+                    } : "Not available"
+                  },
+                  "Impact Assessment": {
+                    "Known Exploited Vulnerability": cve.kev ? "Yes" : "No",
+                    "Proposed Action": cve.propose_action || "No specific action proposed",
+                    "Ransomware Campaign": cve.ransomware_campaign || "No known ransomware campaigns"
+                  },
+                  "References": cve.references?.length > 0 ? cve.references : ["No references provided"]
+                }))
               };
 
           return {
@@ -452,6 +741,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             isError: true,
           };
         }
+      }
+
+      case "reverse_dns_lookup": {
+        const parsedArgs = ReverseDnsLookupArgsSchema.safeParse(args);
+        if (!parsedArgs.success) {
+          throw new Error("Invalid reverse_dns_lookup arguments");
+        }
+        
+        // Join IPs with commas for the API request
+        const ipsString = parsedArgs.data.ips.join(",");
+        
+        const result: ReverseDnsResponse = await queryShodan("/dns/reverse", {
+          ips: ipsString
+        });
+
+        // Format the response in a user-friendly way
+        const formattedResult = {
+          "Reverse DNS Resolutions": Object.entries(result).map(([ip, hostnames]) => ({
+            "IP Address": ip,
+            "Hostnames": hostnames.length > 0 ? hostnames : ["No hostnames found"]
+          })),
+          "Summary": {
+            "Total IPs Queried": parsedArgs.data.ips.length,
+            "IPs with Results": Object.keys(result).length,
+            "Queried IP Addresses": parsedArgs.data.ips
+          }
+        };
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(formattedResult, null, 2)
+            },
+          ],
+        };
       }
 
       default:
