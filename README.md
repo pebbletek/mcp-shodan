@@ -16,6 +16,7 @@ To install Shodan Server for Claude Desktop automatically via [Smithery](https:/
 npx -y @smithery/cli install @burtthecoder/mcp-shodan --client claude
 ```
 
+### Installing Manually
 1. Install the server globally via npm:
 ```bash
 npm install -g @burtthecoder/mcp-shodan
