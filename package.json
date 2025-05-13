@@ -1,8 +1,8 @@
 {
   "type": "module",
-  "name": "@burtthecoder/mcp-shodan",
-  "version": "1.0.16",
-  "description": "A Model Context Protocol server for Shodan API queries.",
+  "name": "@pebbletek/mcp-shodan",
+  "version": "1.0.17",
+  "description": "A Model Context Protocol server for Shodan API queries. Forked from BurtTheCoder/mcp-shodan. Published separately for convenient execution via npx.",
   "main": "build/index.js",
   "bin": {
     "mcp-shodan": "build/index.js"
@@ -27,11 +27,11 @@
     "README.md",
     "LICENSE"
   ],
-  "author": "BurtTheCoder",
+  "author": "aby-pebble",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BurtTheCoder/mcp-shodan.git"
+    "url": "git+https://github.com/pebbletek/mcp-shodan.git"
   },
   "keywords": [
     "mcp",
@@ -45,7 +45,7 @@
     "shodan-integraton"
   ],
   "bugs": {
-    "url": "https://github.com/BurtTheCoder/mcp-shodan/issues"
+    "url": "https://github.com/pebbletek/mcp-shodan/issues"
   },
-  "homepage": "https://github.com/BurtTheCoder/mcp-shodan#readme"
+  "homepage": "https://github.com/pebbletek/mcp-shodan#readme"
 }

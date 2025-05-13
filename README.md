@@ -6,6 +6,12 @@ A Model Context Protocol (MCP) server for querying the [Shodan API](https://shod
 
 <a href="https://glama.ai/mcp/servers/79uakvikcj"><img width="380" height="200" src="https://glama.ai/mcp/servers/79uakvikcj/badge" /></a>
 
+## Attribution
+
+This is a fork of [original-author/original-package](https://github.com/BurtTheCoder/mcp-shodan).  
+No code modifications have been made other than metadata adjustments to allow convenient execution via npx.
+
+
 ## Quick Start (Recommended)
 
 ### Installing via Smithery
